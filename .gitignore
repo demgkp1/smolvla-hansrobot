@@ -1,0 +1,90 @@
+# ============================================================
+# Python
+# ============================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python packaging
+*.egg-info/
+dist/
+build/
+
+# ============================================================
+# IDE / Editor
+# ============================================================
+
+.vscode/
+.idea/
+
+# ============================================================
+# OS
+# ============================================================
+
+.DS_Store
+Thumbs.db
+
+# ============================================================
+# Local configuration
+# ============================================================
+
+# Local robot configuration may contain device-specific settings
+config/robot_config.py
+
+# Environment variables / secrets
+.env
+.env.*
+
+# ============================================================
+# Logs
+# ============================================================
+
+*.log
+logs/
+
+# ============================================================
+# Robot data / experiment outputs
+# ============================================================
+
+# Raw demonstration data
+data/raw/
+
+# Generated datasets
+data/datasets/
+
+# Experiment outputs
+experiments/
+outputs/
+
+# Robot recordings
+recordings/
+
+# ============================================================
+# Models / checkpoints
+# ============================================================
+
+*.pt
+*.pth
+*.safetensors
+*.bin
+*.ckpt
+
+# Hugging Face / model caches
+.cache/
+huggingface_cache/
+
+# ============================================================
+# Temporary files
+# ============================================================
+
+*.tmp
+*.temp
+*.swp
+*.swo
