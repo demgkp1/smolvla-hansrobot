@@ -1,0 +1,17 @@
+[project]
+name = "smolvla-hansrobot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "demgkp1", email = "demgkp1@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+smolvla-hansrobot = "smolvla_hansrobot:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"

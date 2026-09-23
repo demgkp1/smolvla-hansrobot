@@ -1,3 +1,5 @@
+from pynput import keyboard
+
 from teleop.keyboard_teleop import KeyboardTeleop
 
 
@@ -7,25 +9,55 @@ def main():
         angular_speed=5.0,
     )
 
-    print("Pressing W:")
-    command = teleop.key_down("w")
-    print(command)
+    print("Keyboard teleoperation test")
+    print()
+    print("W/S : X + / -")
+    print("A/D : Y - / +")
+    print("R/F : Z + / -")
+    print("Q/E : Rz + / -")
+    print("SPACE : stop")
+    print("ESC : exit")
+    print()
 
-    print("\nPressing D while W is held:")
-    command = teleop.key_down("d")
-    print(command)
+    def on_press(key):
+        try:
+            if hasattr(key, "char") and key.char is not None:
+                command = teleop.key_down(key.char)
+            elif key == keyboard.Key.space:
+                command = teleop.key_down("space")
+            elif key == keyboard.Key.esc:
+                command = teleop.key_down("esc")
 
-    print("\nReleasing W:")
-    command = teleop.key_up("w")
-    print(command)
+                print(command)
 
-    print("\nPressing SPACE:")
-    command = teleop.key_down("space")
-    print(command)
+                if command.exit:
+                    return False
 
-    print("\nPressing ESC:")
-    command = teleop.key_down("esc")
-    print(command)
+                return
+
+            else:
+                return
+
+            print(command)
+
+        except Exception as exc:
+            print(f"[ERROR] {exc}")
+
+    def on_release(key):
+        try:
+            if hasattr(key, "char") and key.char is not None:
+                command = teleop.key_up(key.char)
+
+                print(command)
+
+        except Exception as exc:
+            print(f"[ERROR] {exc}")
+
+    with keyboard.Listener(
+        on_press=on_press,
+        on_release=on_release,
+    ) as listener:
+        listener.join()
 
 
 if __name__ == "__main__":
