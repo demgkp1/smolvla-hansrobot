@@ -26,9 +26,42 @@ TODO_GRP_STOP_READY = False
 
 
 def connect():
+    import socket
+
     cls = getattr(CPS, "CPSClient", None)
     if cls is None:
         raise RuntimeError("CPS.CPSClient 不存在，请检查 CPS.py 的类名")
+
+    # 探活检测：避免未插网线或离线时进入 CPSClient 构造及 sendAndRecv 的死锁/报错路径
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.settimeout(1.5)
+    try:
+        probe.connect((ROBOT_IP, 10003))
+
+        # 检查出口本地地址是否和机械臂同网段，避免被 TUN/VPN 代理虚假握手
+        local_ip = probe.getsockname()[0]
+        if not local_ip.startswith("192.168.0."):
+            raise ConnectionRefusedError(
+                f"出口本地地址 {local_ip} 不在机械臂网段 192.168.0.0/24，"
+                f"可能被代理/VPN 劫持或本机未配置直连网卡"
+            )
+
+        # 应用层探活：发一条 ReadRobotState，等真实回包
+        probe.sendall(b"ReadRobotState,0,;")
+        resp = probe.recv(1024)
+        if not resp:
+            raise ConnectionResetError("连接建立但机械臂未返回数据（对端关闭）")
+    except (socket.timeout, ConnectionRefusedError, ConnectionResetError, OSError) as e:
+        print(f"[connect] 无法连接机械臂 {ROBOT_IP}:10003 -> {e}")
+        print("[connect] 机械臂可能未开机、网线未插、本机未配置 192.168.0.x 网段，或被代理/VPN 劫持。")
+        print("[connect] 离线环境下 dry-run 不能读状态，这是预期行为。")
+        raise SystemExit(5)
+    finally:
+        try:
+            probe.close()
+        except Exception:
+            pass
+
     return cls(ROBOT_IP)  # 旧版：构造即连接
 
 
