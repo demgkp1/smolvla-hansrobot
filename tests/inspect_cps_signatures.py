@@ -17,6 +17,7 @@ METHODS = [
     "HRIF_ShortJogJ",
     "HRIF_StartServo",
     "HRIF_PushServoP",
+    "HRIF_PushServoJ",
     "HRIF_GrpStop",
     "HRIF_GrpEnable",
     "HRIF_GrpDisable",

@@ -1,0 +1,47 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Inspect CPS Signatures",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.inspect_cps_signatures",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "M-1 dry-run",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.m1_single_joint_move",
+            "args": ["--axis", "1", "--delta", "1"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "M-2 dry-run",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.m2_reverse_move",
+            "args": ["--axis", "1", "--delta", "-1"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "M-3 dry-run",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/keyboard_servo_teleop.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Official SDK Check",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/official_sdk_check.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

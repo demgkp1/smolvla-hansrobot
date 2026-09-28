@@ -9,7 +9,15 @@ from __future__ import annotations
 import argparse
 import time
 
-from m1_single_joint_move import (
+import sys
+from pathlib import Path
+
+# 确保项目根在 sys.path 中，这样直接运行本文件时也能导入 tests 包
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tests.m1_single_joint_move import (
     connect,
     read_state,
     read_fsm,
@@ -21,6 +29,7 @@ from m1_single_joint_move import (
     TODO_MOVE_RELJ_READY,
     TODO_GRP_STOP_READY,
 )
+
 
 
 def main():
