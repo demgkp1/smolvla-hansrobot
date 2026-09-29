@@ -2,6 +2,7 @@ accelerate==1.15.0
 aiohappyeyeballs==2.7.1
 aiohttp==3.14.3
 aiosignal==1.4.0
+annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
 attrs==26.1.0
@@ -30,7 +31,9 @@ idna==3.20
 jinja2==3.1.6
 jsonlines==4.0.0
 -e file:///home/dkp/lerobot
+markdown-it-py==4.2.0
 markupsafe==3.0.3
+mdurl==0.1.2
 mergedeep==1.3.4
 mpmath==1.3.0
 multidict==6.9.1
@@ -49,11 +52,14 @@ psutil==7.2.2
 pyarrow==25.0.1
 pydantic==2.13.5
 pydantic-core==2.46.5
+pygments==2.21.0
 python-dateutil==2.9.0.post0
 pytz==2026.4
 pyyaml==6.0.3
 pyyaml-include==1.4.1
+regex==2026.9.29
 requests==2.34.2
+rich==15.0.0
 rocm==7.14.1
 rocm-sdk-core==7.14.1
 rocm-sdk-device-gfx1010==7.14.1
@@ -85,15 +91,19 @@ rocm-sdk-libraries==7.14.1
 safetensors==0.8.0
 sentry-sdk==2.71.0
 setuptools==78.1.0
+shellingham==1.5.4
 six==1.17.0
 smmap==5.0.3
 sympy==1.14.0
 termcolor==3.3.0
+tokenizers==0.22.2
 toml==0.10.2
 torch==2.14.0+rocm7.14
 torchvision==0.29.0+rocm7.14
 tqdm==4.70.1
+transformers==5.5.4
 triton-rocm==3.8.0
+typer==0.27.2
 typing-extensions==4.16.0
 typing-inspect==0.9.0
 typing-inspection==0.4.4
