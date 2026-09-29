@@ -17,6 +17,14 @@ SmolVLA 微调
         ->
 相机 -> SmolVLA -> Action -> HansRobot 真机执行
 ```
+代码机环境（Linux）：
+- uv venv：`~/projects/smolvla-hansrobot/.venv`
+- Python 3.12
+- torch 2.14.0+rocm7.14
+- hip 7.14.60850
+- LeRobot 0.6.1（~/lerobot，commit 1427d35e）
+- GPU：AMD RX 9070 GRE（gfx1201）
+- 环境快照：~/uv_env_smolvla_rocm714.txt
 
 ## VS Code 一键运行与调试
 
@@ -44,4 +52,4 @@ SmolVLA 微调
 > [!WARNING]
 > **安全提醒**：
 > - 调试和运行真机运动时，请务必确保物理急停按钮在手边随时可触达！
-> - 任何软件层面的停止命令（如 `GrpStop`）都不能替代物理急停。
+> - 任何软件层面的停止命令（如 `GrpStop`）都不能替代物理急停。
