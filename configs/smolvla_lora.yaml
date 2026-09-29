@@ -1,0 +1,54 @@
+dataset:
+  repo_id: "hansrobot/smoke_test"
+  root: "data/datasets/smoke_test"
+  episodes: null
+  use_imagenet_stats: true
+
+policy:
+  type: "smolvla"
+  pretrained_path: "lerobot/smolvla_base"
+  use_delta_joint_actions_aloha: false
+  empty_cameras: 0
+  chunk_size: 50
+  n_action_steps: 50
+  freeze_vision_encoder: true
+  train_expert_only: true
+  train_state_proj: true
+  optimizer_lr: 0.0001
+  push_to_hub: false
+  use_amp: true
+
+peft:
+  method_type: "LORA"
+  r: 16
+  lora_alpha: 32
+  target_modules: "(model\\.vlm_with_expert\\.lm_expert\\..*\\.(q|v)_proj|model\\.(state_proj|action_in_proj|action_out_proj|action_time_mlp_in|action_time_mlp_out))"
+  full_training_modules: null
+  init_type: null
+
+output_dir: "checkpoints/smolvla_lora"
+job_name: null
+resume: false
+seed: 1000
+cudnn_deterministic: false
+
+batch_size: 1
+num_workers: 4
+prefetch_factor: 4
+persistent_workers: true
+
+steps: 20000
+log_freq: 200
+save_checkpoint: true
+save_freq: 2000
+
+use_policy_training_preset: true
+
+wandb:
+  enable: false
+  project: "smolvla-hansrobot"
+
+eval:
+  n_episodes: 0
+  batch_size: 0
+  use_async_envs: false
