@@ -92,6 +92,15 @@ class RealSenseCamera:
 
         frames = self._pipeline.wait_for_frames(timeout_ms=1000)
         color_frame = frames.get_color_frame()
+        # 清空队列中已积压的旧帧，避免采集频率低于相机流帧率时产生画面延迟
+        if hasattr(self._pipeline, "poll_for_frames"):
+            while True:
+                newer = self._pipeline.poll_for_frames()
+                if not newer:
+                    break
+                newer_color = newer.get_color_frame()
+                if newer_color:
+                    color_frame = newer_color
         if not color_frame:
             raise RuntimeError("Failed to get color frame from RealSense.")
         return np.asanyarray(color_frame.get_data())

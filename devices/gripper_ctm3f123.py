@@ -11,7 +11,7 @@
     - 对外暴露的 read_position() 归一化到 [0.0, 1.0]
 
 只读/只写约定：
-    - 初始化仅写 寄存器42=1（同步模式）、寄存器0=1（模式1）
+    - connect() 不写任何寄存器（由示教器预先设为手动示教模式，采集阶段只读不写）
     - 读取当前位置：寄存器 14（手指1，同步模式下代表整体开合度）
     - 控制目标位置：寄存器 10
     - 不触碰寄存器 40/41（触发式开合，误触发危险）
@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import sys
 import time
 from typing import Any
@@ -122,24 +123,41 @@ class CTM3F123Gripper:
 
     # ---------- 底层读写（真机） ----------
 
+    @staticmethod
+    def _unit_kwargs(method: Any, slave_id: int) -> dict[str, int]:
+        """兼容 pymodbus >=3.10 (device_id) 与早期 3.x (slave) 参数名。"""
+        try:
+            params = inspect.signature(method).parameters
+        except (TypeError, ValueError):
+            return {"device_id": slave_id}
+        if "device_id" in params:
+            return {"device_id": slave_id}
+        if "slave" in params:
+            return {"slave": slave_id}
+        if "unit" in params:
+            return {"unit": slave_id}
+        return {"device_id": slave_id}
+
     def _write_reg(self, address: int, value: int, desc: str = "") -> None:
         """写单个 Holding Register。"""
         if self.mock:
             return
+        kwargs = self._unit_kwargs(self._client.write_register, self.slave_id)
         rr = self._client.write_register(
-            address=address, value=int(value), device_id=self.slave_id
+            address=address, value=int(value), **kwargs
         )
-        if rr.isError():
+        if rr is None or rr.isError():
             raise IOError(
                 f"写寄存器失败 addr={address} value={value} ({desc}): {rr}"
             )
 
     def _read_reg(self, address: int, desc: str = "") -> int:
         """读单个 Holding Register，返回 int。"""
+        kwargs = self._unit_kwargs(self._client.read_holding_registers, self.slave_id)
         rr = self._client.read_holding_registers(
-            address=address, count=1, device_id=self.slave_id
+            address=address, count=1, **kwargs
         )
-        if rr.isError():
+        if rr is None or rr.isError():
             raise IOError(f"读寄存器失败 addr={address} ({desc}): {rr}")
         return int(rr.registers[0])
 
@@ -197,6 +215,8 @@ class CTM3F123Gripper:
         """设置抓取力输出参数 [0, 400]。"""
         if not (FORCE_MIN <= value <= FORCE_MAX):
             raise ValueError(f"force 必须在 [{FORCE_MIN}, {FORCE_MAX}]，得到 {value}")
+        if not self._connected:
+            raise RuntimeError("CTM3F123Gripper is not connected. Call connect() first.")
         if self.mock:
             return
         self._write_reg(REG_FORCE_1, int(value), "设定力")
@@ -205,6 +225,8 @@ class CTM3F123Gripper:
         """设置速度 [0, 100]。"""
         if not (SPEED_MIN <= value <= SPEED_MAX):
             raise ValueError(f"speed 必须在 [{SPEED_MIN}, {SPEED_MAX}]，得到 {value}")
+        if not self._connected:
+            raise RuntimeError("CTM3F123Gripper is not connected. Call connect() first.")
         if self.mock:
             return
         self._write_reg(REG_SPEED_1, int(value), "设定速度")
@@ -265,8 +287,11 @@ def _run_probe(ip: str, port: int, slave_id: int) -> int:
 
     try:
         # 只读，先试寄存器 14
-        rr = client.read_holding_registers(address=REG_CUR_POS_1, count=1, device_id=slave_id)
-        if rr.isError():
+        unit_kwargs = CTM3F123Gripper._unit_kwargs(
+            client.read_holding_registers, slave_id
+        )
+        rr = client.read_holding_registers(address=REG_CUR_POS_1, count=1, **unit_kwargs)
+        if rr is None or rr.isError():
             print(f"  FAIL: 读寄存器14失败 {rr}")
             print("  提示：可能从站号不对，或寄存器14不可读")
             return 1
@@ -280,8 +305,8 @@ def _run_probe(ip: str, port: int, slave_id: int) -> int:
         # 也顺便读一下手指2、手指3当前位置，看是否一致（同步模式应一致）
         for addr, name in [(24, "手指2当前位置"), (34, "手指3当前位置")]:
             try:
-                rr2 = client.read_holding_registers(address=addr, count=1, device_id=slave_id)
-                if not rr2.isError():
+                rr2 = client.read_holding_registers(address=addr, count=1, **unit_kwargs)
+                if rr2 is not None and not rr2.isError():
                     print(f"  寄存器{addr} ({name}) = {int(rr2.registers[0])}")
             except Exception as e:
                 print(f"  寄存器{addr} 读取失败: {e}")

@@ -31,10 +31,12 @@ class ElfinRobot:
         ip: str = "192.168.0.10",
         port: int = 10003,
         mock: bool = False,
+        timeout: float = 1.5,
     ) -> None:
         self.ip = str(ip)
         self.port = int(port)
         self.mock = bool(mock)
+        self.timeout = float(timeout)
 
         self._cps: Any = None
         self._connected: bool = False
@@ -45,7 +47,7 @@ class ElfinRobot:
     def connect(self) -> None:
         """连接机械臂控制箱。
 
-        真机模式下采用 1.5s 超时探活，避免在机械臂未开机或未插网线时死锁。
+        真机模式下采用超时探活，避免在机械臂未开机或未插网线时死锁。
         连接成功并收到回包即放行，兼容直连网段、双 IP 交换机及路由转发场景。
         """
         if self._connected:
@@ -55,17 +57,19 @@ class ElfinRobot:
             self._connected = True
             return
 
-        # 探活检测：1.5s 超时尝试 socket connect，避免机械臂离线时进入 CPSClient 构造及死锁
+        # 探活检测：超时尝试 socket connect，避免机械臂离线时进入 CPSClient 构造及死锁
         probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        probe.settimeout(1.5)
+        probe.settimeout(self.timeout)
         try:
             probe.connect((self.ip, self.port))
 
-            # 应用层探活：发一条 ReadRobotState，确认有真实回包
+            # 应用层探活：发一条 ReadRobotState，确认有真实 CPS 回包
             probe.sendall(b"ReadRobotState,0,;")
             resp = probe.recv(1024)
             if not resp:
                 raise ConnectionResetError("连接建立但机械臂未返回数据（对端关闭）")
+            if b"," not in resp:
+                raise ConnectionError(f"对端返回非 CPS 协议数据: {resp!r}")
         except (socket.timeout, ConnectionRefusedError, ConnectionResetError, OSError) as err:
             raise ConnectionError(
                 f"无法连接机械臂 {self.ip}:{self.port} -> {err}。"
@@ -83,7 +87,18 @@ class ElfinRobot:
         # 初始化官方 CPSClient (旧版 SDK 构造即建立连接)
         import CPS
 
-        self._cps = CPS.CPSClient(self.ip)
+        client_cls = CPS.CPSClient
+        if self.port != 10003:
+            # 避免全局修改 CPSClient.clientPort，仅在非默认端口时使用局部子类
+            class _PortCPSClient(CPS.CPSClient):
+                clientPort = self.port
+
+            client_cls = _PortCPSClient
+
+        cps = client_cls(self.ip)
+        if hasattr(cps, "tcp") and cps.tcp is not None:
+            cps.tcp.settimeout(self.timeout)
+        self._cps = cps
         self._connected = True
 
     def disconnect(self) -> None:
@@ -121,11 +136,14 @@ class ElfinRobot:
             return mock_joints
 
         raw = self._cps.HRIF_ReadActJointPos()
-        if not raw or len(raw) < 7:
+        if not raw or str(raw[0]) != "0" or len(raw) < 7:
             raise RuntimeError(f"HRIF_ReadActJointPos 返回数据异常: {raw}")
 
         # raw 是 list[str]，retData[1:7] 是 6 个轴的角度制数值
-        angles_deg = [float(x) for x in raw[1:7]]
+        try:
+            angles_deg = [float(x) for x in raw[1:7]]
+        except (TypeError, ValueError) as err:
+            raise RuntimeError(f"HRIF_ReadActJointPos 关节数值解析失败: {raw}") from err
         angles_rad = [float(x) for x in np.deg2rad(angles_deg)]
         return angles_rad
 

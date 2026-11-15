@@ -62,20 +62,24 @@ def setup_logger(log_dir: Path) -> logging.Logger:
     return logger
 
 
-def check_and_prepare_root(root: Path, mock: bool, overwrite: bool, logger: logging.Logger) -> None:
-    """检查数据集存储路径是否存在并做处理。"""
-    if root.exists():
-        if mock or overwrite:
-            logger.info("检测到已存在数据集目录 %s，自动清理覆盖...", root)
-            shutil.rmtree(root)
-        else:
-            answer = input(f"数据集目录 {root} 已存在，是否覆盖？[y/N]: ").strip().lower()
-            if answer in ("y", "yes"):
-                logger.info("用户确认覆盖，清理旧目录 %s...", root)
-                shutil.rmtree(root)
-            else:
-                logger.info("用户取消操作，脚本退出。")
-                sys.exit(0)
+def confirm_root_overwrite(root: Path, mock: bool, overwrite: bool, logger: logging.Logger) -> bool:
+    """在连接硬件前预先确认目录是否允许覆盖，但不提前删除旧数据。"""
+    if not root.exists():
+        return False
+    if mock or overwrite:
+        return True
+    answer = input(f"数据集目录 {root} 已存在，是否覆盖？[y/N]: ").strip().lower()
+    if answer in ("y", "yes"):
+        return True
+    logger.info("用户取消操作，脚本退出。")
+    sys.exit(0)
+
+
+def prepare_root(root: Path, should_remove: bool, logger: logging.Logger) -> None:
+    """硬件连接成功后，按预先确认结果清理旧数据集目录。"""
+    if root.exists() and should_remove:
+        logger.info("检测到已存在数据集目录 %s，清理覆盖...", root)
+        shutil.rmtree(root)
 
 
 def create_lerobot_dataset(
@@ -142,7 +146,7 @@ def record_episode(
     max_duration: float,
     mock: bool,
     logger: logging.Logger,
-) -> tuple[int, float, int]:
+) -> tuple[int, float, int, bool]:
     """录制单个 Episode。
 
     示教流程：
@@ -151,7 +155,7 @@ def record_episode(
     - 如需提前终止可随时按 Ctrl+C，已采集帧将被安全保存并写入数据集
 
     Returns:
-        tuple[int, float, int]: (本次录制帧数, 耗时秒数, 丢帧计数)
+        tuple[int, float, int, bool]: (本次录制帧数, 耗时秒数, 丢帧计数, 是否被 Ctrl+C 中断)
     """
     dt_target = 1.0 / fps
     max_frames = int(round(max_duration * fps))
@@ -180,73 +184,82 @@ def record_episode(
     ep_start_time = time.perf_counter()
     ep_frames = 0
     dropped_frames = 0
+    interrupted = False
 
-    while True:
-        loop_start = time.perf_counter()
-        elapsed_ep = loop_start - ep_start_time
+    try:
+        while True:
+            loop_start = time.perf_counter()
+            elapsed_ep = loop_start - ep_start_time
 
-        # 结束条件: 达到预定帧数或最大持续时间
-        if ep_frames >= max_frames or elapsed_ep >= max_duration:
-            logger.info("Episode %d 达到最大持续时间/帧数，录制结束。", ep_idx + 1)
-            break
+            # 结束条件: 达到预定帧数或最大持续时间
+            if ep_frames >= max_frames or elapsed_ep >= max_duration:
+                logger.info("Episode %d 达到最大持续时间/帧数，录制结束。", ep_idx + 1)
+                break
 
-        # 1. 采集硬件数据
-        img = camera.read()  # (H, W, 3) uint8 RGB
-        joints = robot.read_joints()  # 6 轴弧度 list[float]
-        gripper_pos = gripper.read_position()  # [0.0, 1.0]
+            # 1. 采集硬件数据
+            img = camera.read()  # (H, W, 3) uint8 RGB
+            joints = robot.read_joints()  # 6 轴弧度 list[float]
+            gripper_pos = gripper.read_position()  # [0.0, 1.0]
 
-        state = np.array(joints + [gripper_pos], dtype=np.float32)
-        # 拖动示教规范：action == state (绝对位置)
-        action = state.copy()
+            state = np.array(joints + [gripper_pos], dtype=np.float32)
+            # 拖动示教规范：action == state (绝对位置)
+            action = state.copy()
 
-        # 2. 写入数据帧
-        frame = {
-            "observation.images.front": img,
-            "observation.state": state,
-            "action": action,
-            "task": task_name,
-        }
-        dataset.add_frame(frame)
-        ep_frames += 1
+            # 2. 写入数据帧
+            frame = {
+                "observation.images.front": img,
+                "observation.state": state,
+                "action": action,
+                "task": task_name,
+            }
+            dataset.add_frame(frame)
+            ep_frames += 1
 
-        # 3. 周期性打印状态 (每秒 / 每 fps 帧打印一次)
-        if ep_frames % fps == 0 or ep_frames == 1:
-            state_str = ", ".join(f"{x:+.3f}" for x in state)
-            logger.info(
-                "Episode %d | Frame %4d | Time %5.1fs | State: [%s]",
-                ep_idx + 1,
-                ep_frames,
-                elapsed_ep,
-                state_str,
-            )
-
-        # 4. 时间对齐与丢帧检测
-        loop_elapsed = time.perf_counter() - loop_start
-        sleep_time = dt_target - loop_elapsed
-
-        if sleep_time > 0:
-            time.sleep(sleep_time)
-        else:
-            if loop_elapsed > (2.0 * dt_target):
-                dropped_frames += 1
-                logger.warning(
-                    "丢帧警告: Episode %d Frame %d 循环耗时 %.2fms (> 2x 目标周期 %.1fms)",
+            # 3. 周期性打印状态 (每秒 / 每 fps 帧打印一次)
+            if ep_frames % fps == 0 or ep_frames == 1:
+                state_str = ", ".join(f"{x:+.3f}" for x in state)
+                logger.info(
+                    "Episode %d | Frame %4d | Time %5.1fs | State: [%s]",
                     ep_idx + 1,
                     ep_frames,
-                    loop_elapsed * 1000.0,
-                    dt_target * 1000.0,
+                    elapsed_ep,
+                    state_str,
                 )
 
+            # 4. 时间对齐与丢帧检测
+            loop_elapsed = time.perf_counter() - loop_start
+            sleep_time = dt_target - loop_elapsed
+
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            else:
+                if loop_elapsed > (2.0 * dt_target):
+                    dropped_frames += 1
+                    logger.warning(
+                        "丢帧警告: Episode %d Frame %d 循环耗时 %.2fms (> 2x 目标周期 %.1fms)",
+                        ep_idx + 1,
+                        ep_frames,
+                        loop_elapsed * 1000.0,
+                        dt_target * 1000.0,
+                    )
+    except KeyboardInterrupt:
+        interrupted = True
+        logger.warning("\n检测到 Ctrl+C 中断当前 Episode %d (已采集 %d 帧)...", ep_idx + 1, ep_frames)
+
     ep_total_time = time.perf_counter() - ep_start_time
-    dataset.save_episode()
-    logger.info(
-        "Episode %d 保存完毕: 共 %d 帧, 实际耗时 %.2fs, 丢帧 %d",
-        ep_idx + 1,
-        ep_frames,
-        ep_total_time,
-        dropped_frames,
-    )
-    return ep_frames, ep_total_time, dropped_frames
+    if ep_frames > 0:
+        dataset.save_episode()
+        logger.info(
+            "Episode %d 保存完毕: 共 %d 帧, 实际耗时 %.2fs, 丢帧 %d",
+            ep_idx + 1,
+            ep_frames,
+            ep_total_time,
+            dropped_frames,
+        )
+    else:
+        logger.info("Episode %d 未采集到有效帧，跳过保存。", ep_idx + 1)
+
+    return ep_frames, ep_total_time, dropped_frames, interrupted
 
 
 def main() -> int:
@@ -312,6 +325,12 @@ def main() -> int:
         help="相机高度 (默认: 480)",
     )
     parser.add_argument(
+        "--camera_fps",
+        type=int,
+        default=30,
+        help="相机硬件采集流帧率 Hz (RealSense D415 常用 30/60，默认: 30)",
+    )
+    parser.add_argument(
         "--robot_ip",
         type=str,
         default="192.168.0.10",
@@ -352,62 +371,67 @@ def main() -> int:
         args.root,
     )
 
-    # 1. 检查并准备数据集目录
-    check_and_prepare_root(root_path, args.mock, args.overwrite, logger)
+    # 1. 在连接硬件前确认是否覆盖已有目录（但不提前删除旧数据）
+    should_remove_root = confirm_root_overwrite(root_path, args.mock, args.overwrite, logger)
 
-    # 2. 创建 LeRobotDataset
-    dataset = create_lerobot_dataset(
-        repo_id=args.output_repo_id,
-        root=root_path,
-        fps=args.fps,
-        camera_width=args.camera_width,
-        camera_height=args.camera_height,
-    )
-
-    # 3. 初始化硬件设备
+    # 2. 初始化并连接硬件设备（先连硬件再建数据集，防止连接失败破坏/残留空数据集）
     logger.info("初始化硬件抽象层设备 (mock=%s)...", args.mock)
-    camera = RealSenseCamera(
-        width=args.camera_width,
-        height=args.camera_height,
-        fps=args.fps,
-        mock=args.mock,
-    )
-    robot = ElfinRobot(
-        ip=args.robot_ip,
-        port=args.robot_port,
-        mock=args.mock,
-    )
-    gripper = CTM3F123Gripper(
-        ip=args.gripper_ip,
-        port=args.gripper_port,
-        mock=args.mock,
-    )
-
+    dataset: LeRobotDataset | None = None
     total_frames = 0
     total_dropped = 0
     start_all_time = time.perf_counter()
     episodes_recorded = 0
 
     try:
-        with camera, robot, gripper:
-            logger.info("所有设备已连接就绪。开始采集循环...")
-            for ep_idx in range(args.num_episodes):
-                ep_frames, _, dropped = record_episode(
-                    ep_idx=ep_idx,
-                    total_episodes=args.num_episodes,
-                    robot=robot,
-                    gripper=gripper,
-                    camera=camera,
-                    dataset=dataset,
-                    task_name=args.task_name,
+        camera = RealSenseCamera(
+            width=args.camera_width,
+            height=args.camera_height,
+            fps=args.camera_fps,
+            mock=args.mock,
+        )
+        with camera:
+            robot = ElfinRobot(
+                ip=args.robot_ip,
+                port=args.robot_port,
+                mock=args.mock,
+            )
+            gripper = CTM3F123Gripper(
+                ip=args.gripper_ip,
+                port=args.gripper_port,
+                mock=args.mock,
+            )
+            with robot, gripper:
+                logger.info("所有设备已连接就绪，创建 LeRobotDataset...")
+                prepare_root(root_path, should_remove_root, logger)
+                dataset = create_lerobot_dataset(
+                    repo_id=args.output_repo_id,
+                    root=root_path,
                     fps=args.fps,
-                    max_duration=args.max_duration,
-                    mock=args.mock,
-                    logger=logger,
+                    camera_width=args.camera_width,
+                    camera_height=args.camera_height,
                 )
-                total_frames += ep_frames
-                total_dropped += dropped
-                episodes_recorded += 1
+                logger.info("开始采集循环...")
+                for ep_idx in range(args.num_episodes):
+                    ep_frames, _, dropped, interrupted = record_episode(
+                        ep_idx=ep_idx,
+                        total_episodes=args.num_episodes,
+                        robot=robot,
+                        gripper=gripper,
+                        camera=camera,
+                        dataset=dataset,
+                        task_name=args.task_name,
+                        fps=args.fps,
+                        max_duration=args.max_duration,
+                        mock=args.mock,
+                        logger=logger,
+                    )
+                    if ep_frames > 0:
+                        total_frames += ep_frames
+                        total_dropped += dropped
+                        episodes_recorded += 1
+                    if interrupted:
+                        logger.warning("用户中断采集，停止后续 Episode 录制。")
+                        break
 
     except KeyboardInterrupt:
         logger.warning("\n检测到用户中断 (Ctrl+C)，正在安全退出...")
@@ -415,10 +439,13 @@ def main() -> int:
         logger.error("采集过程发生未捕获异常: %s", err, exc_info=True)
         raise
     finally:
-        logger.info("正在保存并关闭数据集 (dataset.finalize)...")
-        dataset.finalize()
-        all_elapsed = time.perf_counter() - start_all_time
+        if dataset is not None and episodes_recorded > 0:
+            logger.info("正在保存并关闭数据集 (dataset.finalize)...")
+            dataset.finalize()
+        elif dataset is not None:
+            logger.warning("未成功录制任何完整/有效帧的 Episode，跳过 finalize。")
 
+        all_elapsed = time.perf_counter() - start_all_time
         logger.info("=== 采集任务结束摘要 ===")
         logger.info("完成 Episode 数: %d / %d", episodes_recorded, args.num_episodes)
         logger.info("总写入帧数: %d 帧", total_frames)

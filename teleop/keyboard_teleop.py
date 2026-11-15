@@ -55,6 +55,7 @@ class KeyboardTeleop:
             return KeyboardCommand(exit=True)
 
         if key == "space":
+            self._pressed_keys.clear()
             return KeyboardCommand(stop=True)
 
         self._pressed_keys.add(key)
