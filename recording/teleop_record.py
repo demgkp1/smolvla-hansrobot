@@ -43,6 +43,7 @@ def setup_logger(log_dir: Path) -> logging.Logger:
 
     logger = logging.getLogger("teleop_record")
     logger.setLevel(logging.INFO)
+    logger.propagate = False
     logger.handlers.clear()
 
     formatter = logging.Formatter(
