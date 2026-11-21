@@ -31,7 +31,7 @@ if str(ROOT) not in sys.path:
 from devices.camera_realsense import RealSenseCamera
 from devices.gripper_ctm3f123 import CTM3F123Gripper
 from devices.robot_elfin import ElfinRobot
-from tests.m1_single_joint_move import call_grp_stop, check_ready, read_state
+from tests.m1_single_joint_move import check_ready, read_state
 
 # 安全开关：真机首次执行前，请先完成 --offline-episode 与连接真机的 Dry-Run 验证，
 # 确认预测关节角与步进差值安全后，再将此开关改为 True。
@@ -229,6 +229,7 @@ def run_real_robot(args: argparse.Namespace) -> int:
                 print("拒绝启动伺服运动。")
                 return 2
 
+        policy.reset()
         init_joints_rad = np.asarray(robot.read_joints(), dtype=np.float32)
         init_grip = float(gripper.read_position())
         init_state = np.concatenate([init_joints_rad, [init_grip]]).astype(np.float32)
@@ -260,7 +261,6 @@ def run_real_robot(args: argparse.Namespace) -> int:
                 f"max_step_delta={args.max_step_delta_deg} deg, Ctrl+C 立即急停退出。"
             )
 
-        policy.reset()
         anchor_deg = current_deg.copy()
         last_grip_cmd = init_grip
         last_grip_time = 0.0
@@ -270,12 +270,17 @@ def run_real_robot(args: argparse.Namespace) -> int:
         while max_steps is None or step_idx < max_steps:
             loop_t0 = time.monotonic()
 
-            joints_rad = np.asarray(robot.read_joints(), dtype=np.float32)
-            grip_pos = float(gripper.read_position())
-            state_rad = np.concatenate([joints_rad, [grip_pos]]).astype(np.float32)
-            img_rgb = cam.read()
-
-            pred = predict_action(policy, pre, post, img_rgb, state_rad, args.task)
+            if step_idx == 0:
+                # 复用启动前已预热的推理结果，确保 HRIF_StartServo 后立即下发首帧 ServoJ
+                joints_rad = init_joints_rad
+                grip_pos = init_grip
+                pred = first_pred
+            else:
+                joints_rad = np.asarray(robot.read_joints(), dtype=np.float32)
+                grip_pos = float(gripper.read_position())
+                state_rad = np.concatenate([joints_rad, [grip_pos]]).astype(np.float32)
+                img_rgb = cam.read()
+                pred = predict_action(policy, pre, post, img_rgb, state_rad, args.task)
             curr_deg = np.rad2deg(joints_rad.astype(np.float64))
             pred_deg = np.rad2deg(pred[:6])
             safe_deg = compute_safe_target_deg(pred_deg, anchor_deg, args.max_step_delta_deg, args.ema_alpha)
@@ -317,7 +322,7 @@ def run_real_robot(args: argparse.Namespace) -> int:
         if args.execute or servo_started:
             try:
                 if robot.is_connected() and robot._cps is not None:
-                    call_grp_stop(robot._cps)
+                    _check_cps_ret(robot._cps.HRIF_GrpStop(), "HRIF_GrpStop")
                     print("GrpStop 已调用。")
             except Exception as err:
                 print("GrpStop 调用失败，请立即按下物理急停！错误：", err)
